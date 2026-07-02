@@ -53,6 +53,7 @@ import {
     RECORDING_MAX_EVENT_SIZE,
     RECORDING_REMOTE_CONFIG_TTL_MS,
 } from '../../../extensions/replay/external/lazy-loaded-session-recorder'
+import { jsonStringify } from '../../../request'
 
 // Type and source defined here designate a non-user-generated recording event
 
@@ -226,6 +227,7 @@ describe('Lazy SessionRecording', () => {
     }
 
     beforeEach(() => {
+        _addCustomEvent.mockReset()
         mockRemoteConfigLoad.mockClear()
         removePageviewCaptureHookMock = jest.fn()
         sessionId = 'sessionId' + uuidv7()
@@ -2278,6 +2280,30 @@ describe('Lazy SessionRecording', () => {
                 size: 149,
                 windowId: 'windowId',
             })
+        })
+
+        it('can serialize the $posthog_config event when config.segment is circular', () => {
+            const analyticsBrowser = { analytics: { name: 'Segment AnalyticsBrowser' } } as any
+            analyticsBrowser.analytics.instance = analyticsBrowser
+            ;(config as any).segment = analyticsBrowser
+
+            _addCustomEvent.mockImplementation((tag, payload) => {
+                _emit(createCustomSnapshot({}, payload, tag))
+            })
+
+            sessionRecording.onRemoteConfig(makeFlagsResponse({ sessionRecording: { endpoint: '/s/' } }))
+            sessionRecording['_lazyLoadedSessionRecording']['_flushBuffer']()
+
+            const snapshotCapture = (posthog.capture as jest.Mock).mock.calls.find(([event]) => event === '$snapshot')
+            expect(snapshotCapture).toBeDefined()
+
+            expect(() => jsonStringify(snapshotCapture![1])).not.toThrow()
+
+            const serializedSnapshotProperties = JSON.parse(jsonStringify(snapshotCapture![1]))
+            const posthogConfigEvent = serializedSnapshotProperties.$snapshot_data.find(
+                (event: any) => event.data?.tag === '$posthog_config'
+            )
+            expect(posthogConfigEvent.data.payload.config.segment.analytics.instance).toBe('[Circular]')
         })
 
         describe('the session id manager', () => {

@@ -23,6 +23,7 @@ import {
     estimateCompressedEventSize,
     estimateSize,
     INCREMENTAL_SNAPSHOT_EVENT_TYPE,
+    replaceCircularReferences,
     splitBuffer,
     truncateLargeConsoleLogs,
 } from './sessionrecording-utils'
@@ -711,7 +712,9 @@ export class LazyLoadedSessionRecording implements LazyLoadedSessionRecordingInt
     }
 
     private _tryAddCustomEvent(tag: string, payload: any): boolean {
-        return this._tryRRWebMethod(newQueuedEvent(() => getRRWebRecord()!.addCustomEvent(tag, payload)))
+        return this._tryRRWebMethod(
+            newQueuedEvent(() => getRRWebRecord()!.addCustomEvent(tag, replaceCircularReferences(payload)))
+        )
     }
 
     private _pageViewFallBack() {

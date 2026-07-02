@@ -1,6 +1,6 @@
 import type { eventWithTime, pluginEvent } from '../types/rrweb-types'
 
-import { isArray, isNull, isObject, isUndefined } from '@posthog/core'
+import { isArray, isFunction, isNull, isObject, isUndefined } from '@posthog/core'
 import type { SnapshotBuffer } from './lazy-loaded-session-recorder'
 
 // taken from https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Errors/Cyclic_object_value#circular_references
@@ -31,6 +31,39 @@ function estimateStringBytes(data: string): number {
 export function estimateSize(sizeable: unknown): number {
     const stringifiedData = JSON.stringify(sizeable, circularReferenceReplacer())
     return stringifiedData ? estimateStringBytes(stringifiedData) : 0
+}
+
+export function replaceCircularReferences<T>(value: T): T {
+    const ancestors: any[] = []
+    const clone = (currentValue: any, parent: any): any => {
+        if (isArray(currentValue) || isObject(currentValue)) {
+            while (ancestors.length > 0 && ancestors[ancestors.length - 1] !== parent) {
+                ancestors.pop()
+            }
+            if (ancestors.includes(currentValue)) {
+                return '[Circular]'
+            }
+            const toJSON = (currentValue as { toJSON?: unknown }).toJSON
+            if (isFunction(toJSON)) {
+                return clone(toJSON.call(currentValue), parent)
+            }
+
+            ancestors.push(currentValue)
+            if (isArray(currentValue)) {
+                return currentValue.map((item) => clone(item, currentValue))
+            }
+
+            const replacement: Record<string, any> = {}
+            for (const key in currentValue) {
+                if (Object.prototype.hasOwnProperty.call(currentValue, key)) {
+                    replacement[key] = clone(currentValue[key], currentValue)
+                }
+            }
+            return replacement
+        }
+        return currentValue
+    }
+    return clone(value, undefined)
 }
 
 // Lightweight size estimate for compressed events without allocating a JSON string.
